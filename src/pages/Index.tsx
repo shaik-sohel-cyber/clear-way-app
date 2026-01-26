@@ -1,16 +1,19 @@
 import { useState, useCallback, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { StatusBar } from "@/components/StatusBar";
-import { CameraView } from "@/components/CameraView";
 import { VoiceListener } from "@/components/VoiceListener";
 import { ResponseDisplay } from "@/components/ResponseDisplay";
 import { QuickActions } from "@/components/QuickActions";
 import { EmergencyButton } from "@/components/EmergencyButton";
 import { HelpDialog } from "@/components/HelpDialog";
+import { ObstacleWarningOverlay } from "@/components/ui/ObstacleWarningOverlay";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { useVoiceCommands, VoiceCommand } from "@/hooks/useVoiceCommands";
 import { useVisionAI, VisionMode } from "@/hooks/useVisionAI";
 import { useCamera } from "@/hooks/useCamera";
-import { Settings, Camera, CameraOff } from "lucide-react";
+import { useAutoObstacleDetection } from "@/hooks/useAutoObstacleDetection";
+import { useSettings } from "@/contexts/SettingsContext";
+import { Camera, CameraOff, WifiOff, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
@@ -34,11 +37,42 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeMode, setActiveMode] = useState<VisionMode | undefined>();
   const [showCamera, setShowCamera] = useState(true);
-  const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
+  const { settings } = useSettings();
   const { speak, stop: stopSpeaking, isSpeaking } = useSpeechSynthesis();
   const { analyzeImage, isAnalyzing } = useVisionAI();
   const { captureImage, videoRef, startCamera, stopCamera, isActive: cameraActive } = useCamera();
+
+  // Auto obstacle detection
+  const { lastWarning, warningLevel, isChecking } = useAutoObstacleDetection({
+    captureImage,
+    isActive: cameraActive && showCamera,
+  });
+
+  // Online/offline detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      toast({ title: "Back Online", description: "Connection restored" });
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      toast({ 
+        variant: "destructive", 
+        title: "Offline", 
+        description: "Some features may be limited" 
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Add message to conversation
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
@@ -54,7 +88,6 @@ const Index = () => {
 
   // Handle AI vision analysis
   const performAnalysis = useCallback(async (mode: VisionMode, query?: string) => {
-    // Capture image from camera
     const image = captureImage();
     
     if (!image) {
@@ -64,16 +97,13 @@ const Index = () => {
       return;
     }
 
-    setLastCapturedImage(image);
     setActiveMode(mode);
 
-    // Add user message
     const userMsg = query 
       ? `Hey Vision, ${mode}${query ? ` - ${query}` : ''}`
       : `Hey Vision, ${mode}`;
     addMessage('user', userMsg);
 
-    // Speak acknowledgment
     const acknowledgments: Record<VisionMode, string> = {
       describe: "Analyzing scene...",
       navigate: query ? `Finding directions to ${query}...` : "Analyzing navigation options...",
@@ -85,7 +115,11 @@ const Index = () => {
     };
     speak(acknowledgments[mode] || "Analyzing...");
 
-    // Perform AI analysis
+    // Haptic feedback
+    if (settings.hapticFeedback && 'vibrate' in navigator) {
+      navigator.vibrate(50);
+    }
+
     const result = await analyzeImage(image, mode, query);
 
     if (result) {
@@ -98,7 +132,7 @@ const Index = () => {
     }
 
     setActiveMode(undefined);
-  }, [captureImage, analyzeImage, speak, addMessage]);
+  }, [captureImage, analyzeImage, speak, addMessage, settings.hapticFeedback]);
 
   // Handle voice commands
   const handleCommand = useCallback((result: { command: VoiceCommand; query?: string; rawText: string }) => {
@@ -136,7 +170,6 @@ const Index = () => {
         break;
       case 'unknown':
         if (result.query) {
-          // Treat as general question
           performAnalysis('general', result.query);
         }
         break;
@@ -158,9 +191,7 @@ const Index = () => {
 
   // Handle quick action buttons
   const handleQuickAction = useCallback((action: string) => {
-    if (action === 'emergency') {
-      return; // Handled by EmergencyButton
-    }
+    if (action === 'emergency') return;
 
     if (!cameraActive) {
       speak("Camera is not active. Please enable the camera first.");
@@ -208,7 +239,6 @@ const Index = () => {
   // Start listening automatically
   useEffect(() => {
     if (voiceSupported && !isListening) {
-      // Auto-start listening after a brief delay
       const timer = setTimeout(() => {
         startListening();
         speak("VisionAI is ready. Say Hey Vision followed by a command.");
@@ -218,48 +248,106 @@ const Index = () => {
   }, [voiceSupported]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background pb-20">
       {/* Status Bar */}
-      <StatusBar />
+      <StatusBar isOnline={isOnline} />
       
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h1 className="text-accessible-lg text-primary">VisionAI</h1>
+      <motion.header 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/50 backdrop-blur-lg"
+      >
+        <div className="flex items-center gap-3">
+          <motion.div 
+            className="p-2 rounded-full bg-primary/20"
+            animate={{ scale: isListening ? [1, 1.1, 1] : 1 }}
+            transition={{ repeat: isListening ? Infinity : 0, duration: 1.5 }}
+          >
+            {isOnline ? (
+              <Wifi className="h-5 w-5 text-success" />
+            ) : (
+              <WifiOff className="h-5 w-5 text-warning" />
+            )}
+          </motion.div>
+          <h1 className="text-accessible-lg text-primary font-bold">VisionAI</h1>
+        </div>
         <div className="flex items-center gap-2">
           <Button 
             variant="ghost" 
             size="icon" 
             aria-label={showCamera ? "Hide camera" : "Show camera"}
             onClick={() => setShowCamera(!showCamera)}
+            className="touch-target"
           >
             {showCamera ? <CameraOff className="h-6 w-6" /> : <Camera className="h-6 w-6" />}
           </Button>
           <HelpDialog onSpeak={speak} />
-          <Button variant="ghost" size="icon" aria-label="Settings">
-            <Settings className="h-6 w-6" />
-          </Button>
         </div>
-      </header>
+      </motion.header>
 
-      {/* Camera View - takes more space when active */}
-      {showCamera && (
-        <div className="h-48 md:h-64 relative">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-            aria-label="Camera feed for scene analysis"
-          />
-          {cameraActive && (
-            <div className="absolute top-2 left-2 flex items-center gap-2 bg-background/80 backdrop-blur-sm px-3 py-1 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-              <span className="text-xs font-medium">Live</span>
+      {/* Camera View */}
+      <AnimatePresence>
+        {showCamera && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="relative overflow-hidden"
+          >
+            <div className="h-56 md:h-72 relative">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+                aria-label="Camera feed for scene analysis"
+              />
+              
+              {/* Camera overlay gradient */}
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/80 pointer-events-none" />
+              
+              {/* Live indicator */}
+              {cameraActive && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="absolute top-3 left-3 flex items-center gap-2 bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-full"
+                >
+                  <motion.span 
+                    className="w-2.5 h-2.5 rounded-full bg-success"
+                    animate={{ opacity: [1, 0.5, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                  />
+                  <span className="text-sm font-medium">Live</span>
+                </motion.div>
+              )}
+
+              {/* Obstacle warning overlay */}
+              <ObstacleWarningOverlay 
+                warningLevel={warningLevel}
+                message={lastWarning || undefined}
+                isVisible={settings.autoObstacleWarning && warningLevel !== 'none'}
+              />
+
+              {/* Analyzing indicator */}
+              {(isAnalyzing || isChecking) && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="absolute top-3 right-3 bg-primary/90 backdrop-blur-sm px-3 py-1.5 rounded-full"
+                >
+                  <span className="text-sm font-medium text-primary-foreground">
+                    {isChecking ? 'Scanning...' : 'Analyzing...'}
+                  </span>
+                </motion.div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Response Display */}
       <ResponseDisplay 
@@ -274,8 +362,12 @@ const Index = () => {
       />
 
       {/* Main Controls */}
-      <div className="p-6 bg-card border-t border-border space-y-4">
-        {/* Voice Listener - centered and prominent */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-4 bg-card/50 backdrop-blur-lg border-t border-border space-y-4"
+      >
+        {/* Voice Listener */}
         <VoiceListener
           isListening={isListening}
           isProcessing={isAnalyzing}
@@ -285,7 +377,7 @@ const Index = () => {
 
         {/* Emergency Button */}
         <EmergencyButton />
-      </div>
+      </motion.div>
     </div>
   );
 };
