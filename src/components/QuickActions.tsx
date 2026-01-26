@@ -29,11 +29,11 @@ export function QuickActions({ onAction, activeMode, className }: QuickActionsPr
           return (
             <Button
               key={action.id}
-              variant={isEmergency ? "destructive" : isActive ? "accent" : "outline"}
+              variant={isEmergency ? "destructive" : isActive ? "secondary" : "outline"}
               size="lg"
               className={cn(
                 "flex-shrink-0 gap-2",
-                isActive && !isEmergency && "glow-accent"
+                isActive && !isEmergency && "bg-accent text-accent-foreground"
               )}
               onClick={() => onAction(action.id)}
               aria-pressed={isActive}
