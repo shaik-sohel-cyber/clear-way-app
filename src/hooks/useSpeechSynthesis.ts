@@ -1,47 +1,84 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
+
+interface SpeechCallbacks {
+  onStart?: () => void;
+  onEnd?: () => void;
+}
 
 export function useSpeechSynthesis() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const callbacksRef = useRef<SpeechCallbacks>({});
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     setIsSupported('speechSynthesis' in window);
+    
+    // Preload voices
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
   }, []);
 
-  const speak = useCallback((text: string, rate: number = 0.9) => {
-    if (!isSupported) return;
+  const speak = useCallback((text: string, rate: number = 0.9, callbacks?: SpeechCallbacks): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!isSupported) {
+        resolve();
+        return;
+      }
 
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+      callbacksRef.current = callbacks || {};
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = rate;
-    utterance.pitch = 1;
-    utterance.volume = 1;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = rate;
+      utterance.pitch = 1;
+      utterance.volume = 1;
 
-    // Try to use a clear, natural voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(
-      voice => voice.name.includes('Samantha') || 
-               voice.name.includes('Google') ||
-               voice.name.includes('Natural')
-    ) || voices[0];
-    
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
+      // Try to use a clear, natural voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(
+        voice => voice.name.includes('Samantha') || 
+                 voice.name.includes('Google') ||
+                 voice.name.includes('Natural') ||
+                 voice.lang.startsWith('en')
+      ) || voices[0];
+      
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
 
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        callbacksRef.current.onStart?.();
+      };
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        callbacksRef.current.onEnd?.();
+        resolve();
+      };
+      
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        callbacksRef.current.onEnd?.();
+        resolve();
+      };
 
-    window.speechSynthesis.speak(utterance);
+      utteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    });
   }, [isSupported]);
 
   const stop = useCallback(() => {
     if (isSupported) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
+      callbacksRef.current.onEnd?.();
     }
   }, [isSupported]);
 

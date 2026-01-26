@@ -10,12 +10,12 @@ interface QuickActionsProps {
 }
 
 const actions = [
-  { id: 'describe', icon: Eye, label: 'Describe', gradient: 'from-primary to-orange-400' },
-  { id: 'navigate', icon: Navigation, label: 'Navigate', gradient: 'from-accent to-teal-400' },
-  { id: 'read', icon: FileText, label: 'Read', gradient: 'from-secondary to-blue-500' },
-  { id: 'detect', icon: Camera, label: 'Detect', gradient: 'from-primary to-amber-500' },
-  { id: 'location', icon: MapPin, label: 'Location', gradient: 'from-accent to-cyan-400' },
-  { id: 'obstacle', icon: Shield, label: 'Check Path', gradient: 'from-warning to-yellow-400' },
+  { id: 'describe', icon: Eye, label: 'Describe', voiceHint: '"describe"' },
+  { id: 'navigate', icon: Navigation, label: 'Navigate', voiceHint: '"navigate"' },
+  { id: 'read', icon: FileText, label: 'Read', voiceHint: '"read"' },
+  { id: 'detect', icon: Camera, label: 'Detect', voiceHint: '"detect"' },
+  { id: 'location', icon: MapPin, label: 'Location', voiceHint: '"location"' },
+  { id: 'obstacle', icon: Shield, label: 'Check Path', voiceHint: '"obstacle"' },
 ];
 
 const containerVariants = {
@@ -53,7 +53,7 @@ export function QuickActions({ onAction, activeMode, className }: QuickActionsPr
                 size="lg"
                 className={cn(
                   "flex-shrink-0 gap-2 rounded-xl transition-all duration-300",
-                  isActive && `bg-gradient-to-r ${action.gradient} border-0 shadow-lg`
+                  isActive && "bg-primary shadow-lg"
                 )}
                 onClick={() => onAction(action.id)}
                 aria-pressed={isActive}
@@ -62,9 +62,9 @@ export function QuickActions({ onAction, activeMode, className }: QuickActionsPr
                   animate={isActive ? { scale: [1, 1.2, 1] } : {}}
                   transition={{ repeat: isActive ? Infinity : 0, duration: 1 }}
                 >
-                  <Icon className={cn("h-5 w-5", isActive && "text-white")} />
+                  <Icon className={cn("h-5 w-5", isActive && "text-primary-foreground")} />
                 </motion.div>
-                <span className={cn("whitespace-nowrap font-medium", isActive && "text-white")}>
+                <span className={cn("whitespace-nowrap font-medium", isActive && "text-primary-foreground")}>
                   {action.label}
                 </span>
               </Button>

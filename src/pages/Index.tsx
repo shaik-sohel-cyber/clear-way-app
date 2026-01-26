@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatusBar } from "@/components/StatusBar";
 import { VoiceListener } from "@/components/VoiceListener";
@@ -7,11 +7,13 @@ import { QuickActions } from "@/components/QuickActions";
 import { EmergencyButton } from "@/components/EmergencyButton";
 import { HelpDialog } from "@/components/HelpDialog";
 import { ObstacleWarningOverlay } from "@/components/ui/ObstacleWarningOverlay";
+import { ConversationPrompt } from "@/components/ConversationPrompt";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { useVoiceCommands, VoiceCommand } from "@/hooks/useVoiceCommands";
 import { useVisionAI, VisionMode } from "@/hooks/useVisionAI";
 import { useCamera } from "@/hooks/useCamera";
 import { useAutoObstacleDetection } from "@/hooks/useAutoObstacleDetection";
+import { useConversationalAssistant } from "@/hooks/useConversationalAssistant";
 import { useSettings } from "@/contexts/SettingsContext";
 import { Camera, CameraOff, WifiOff, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,19 +27,22 @@ interface Message {
 }
 
 const HELP_MESSAGE = `Here are the voice commands you can use:
-Say "Hey Vision, describe" to hear what's around you.
-Say "Hey Vision, navigate to" followed by a location for directions.
-Say "Hey Vision, read" to read any visible text.
-Say "Hey Vision, detect" to identify nearby objects.
-Say "Hey Vision, where am I" to identify your location.
-Say "Hey Vision, obstacle" to check for hazards ahead.
-Say "Hey Vision, stop" to cancel the current action.`;
+Say "describe" to hear what's around you.
+Say "navigate" for directions.
+Say "read" to read any visible text.
+Say "detect" to identify nearby objects.
+Say "location" to identify where you are.
+Say "obstacle" to check for hazards ahead.
+Say "stop" to cancel.
+Or just ask me anything!`;
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeMode, setActiveMode] = useState<VisionMode | undefined>();
   const [showCamera, setShowCamera] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showConversationPrompt, setShowConversationPrompt] = useState(true);
+  const hasStartedRef = useRef(false);
 
   const { settings } = useSettings();
   const { speak, stop: stopSpeaking, isSpeaking } = useSpeechSynthesis();
@@ -91,27 +96,28 @@ const Index = () => {
     const image = captureImage();
     
     if (!image) {
-      const errorMsg = "Could not capture image from camera. Please ensure the camera is active.";
+      const errorMsg = "Could not capture image. Please enable the camera first.";
       speak(errorMsg);
       addMessage('assistant', errorMsg);
       return;
     }
 
     setActiveMode(mode);
+    setShowConversationPrompt(false);
 
     const userMsg = query 
-      ? `Hey Vision, ${mode}${query ? ` - ${query}` : ''}`
-      : `Hey Vision, ${mode}`;
+      ? `${mode}${query ? ` - ${query}` : ''}`
+      : `${mode}`;
     addMessage('user', userMsg);
 
     const acknowledgments: Record<VisionMode, string> = {
-      describe: "Analyzing scene...",
-      navigate: query ? `Finding directions to ${query}...` : "Analyzing navigation options...",
-      read: "Reading visible text...",
-      detect: "Detecting objects...",
-      location: "Identifying location...",
-      obstacle: "Checking for obstacles...",
-      general: "Analyzing...",
+      describe: "Let me describe what I see...",
+      navigate: query ? `Finding directions to ${query}...` : "Looking for navigation options...",
+      read: "Reading the text...",
+      detect: "Detecting objects around you...",
+      location: "Identifying your location...",
+      obstacle: "Checking the path ahead...",
+      general: "Let me analyze that...",
     };
     speak(acknowledgments[mode] || "Analyzing...");
 
@@ -124,9 +130,14 @@ const Index = () => {
 
     if (result) {
       addMessage('assistant', result);
-      speak(result);
+      await speak(result);
+      
+      // After response, offer to help more
+      setTimeout(() => {
+        speak("What else can I help you with?");
+      }, 1000);
     } else {
-      const errorMsg = "I'm sorry, I couldn't analyze the scene. Please try again.";
+      const errorMsg = "I couldn't analyze that. Please try again.";
       addMessage('assistant', errorMsg);
       speak(errorMsg);
     }
@@ -134,57 +145,42 @@ const Index = () => {
     setActiveMode(undefined);
   }, [captureImage, analyzeImage, speak, addMessage, settings.hapticFeedback]);
 
+  // Show help
+  const showHelp = useCallback(() => {
+    addMessage('user', 'help');
+    addMessage('assistant', HELP_MESSAGE);
+    speak(HELP_MESSAGE);
+  }, [addMessage, speak]);
+
+  // Conversational assistant
+  const assistant = useConversationalAssistant({
+    onAction: performAnalysis,
+    onSpeak: speak,
+    onHelp: showHelp,
+  });
+
   // Handle voice commands
   const handleCommand = useCallback((result: { command: VoiceCommand; query?: string; rawText: string }) => {
-    console.log('Command received:', result);
+    console.log('Voice command received:', result);
 
-    switch (result.command) {
-      case 'describe':
-        performAnalysis('describe');
-        break;
-      case 'navigate':
-        performAnalysis('navigate', result.query);
-        break;
-      case 'read':
-        performAnalysis('read');
-        break;
-      case 'detect':
-        performAnalysis('detect');
-        break;
-      case 'location':
-        performAnalysis('location');
-        break;
-      case 'obstacle':
-        performAnalysis('obstacle');
-        break;
-      case 'help':
-        addMessage('user', 'Hey Vision, help');
-        addMessage('assistant', HELP_MESSAGE);
-        speak(HELP_MESSAGE);
-        break;
-      case 'stop':
-        stopSpeaking();
-        addMessage('user', 'Hey Vision, stop');
-        addMessage('assistant', "Stopped.");
-        speak("Stopped.");
-        break;
-      case 'unknown':
-        if (result.query) {
-          performAnalysis('general', result.query);
-        }
-        break;
+    // Let conversational assistant handle it first
+    const handled = assistant.handleCommand(result);
+    
+    if (!handled && result.command === 'stop') {
+      stopSpeaking();
+      addMessage('user', 'stop');
+      addMessage('assistant', "Stopped.");
     }
-  }, [performAnalysis, speak, stopSpeaking, addMessage]);
+  }, [assistant, stopSpeaking, addMessage]);
 
   // Voice command hook
-  const { isListening, startListening, stopListening, isSupported: voiceSupported } = useVoiceCommands({
+  const { isListening, startListening, stopListening, isSupported: voiceSupported, lastTranscript } = useVoiceCommands({
     onCommand: handleCommand,
     onError: (error) => {
-      toast({
-        variant: "destructive",
-        title: "Voice Error",
-        description: error,
-      });
+      console.log('Voice error:', error);
+    },
+    onTranscript: (transcript) => {
+      console.log('Heard:', transcript);
     },
     continuous: true,
   });
@@ -209,6 +205,7 @@ const Index = () => {
       read: 'read',
       detect: 'detect',
       location: 'location',
+      obstacle: 'obstacle',
     };
 
     const mode = modeMap[action];
@@ -236,16 +233,19 @@ const Index = () => {
     };
   }, [showCamera, startCamera, stopCamera]);
 
-  // Start listening automatically
+  // Initial greeting
   useEffect(() => {
-    if (voiceSupported && !isListening) {
+    if (voiceSupported && !hasStartedRef.current) {
+      hasStartedRef.current = true;
+      
       const timer = setTimeout(() => {
         startListening();
-        speak("VisionAI is ready. Say Hey Vision followed by a command.");
-      }, 1000);
+        assistant.greet();
+      }, 1500);
+      
       return () => clearTimeout(timer);
     }
-  }, [voiceSupported]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [voiceSupported, startListening, assistant]);
 
   return (
     <div className="flex flex-col h-screen bg-background pb-20">
@@ -346,6 +346,17 @@ const Index = () => {
               )}
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Conversation Prompt */}
+      <AnimatePresence>
+        {showConversationPrompt && messages.length === 0 && (
+          <ConversationPrompt 
+            isListening={isListening}
+            lastTranscript={lastTranscript}
+            onActionSelect={handleQuickAction}
+          />
         )}
       </AnimatePresence>
 
