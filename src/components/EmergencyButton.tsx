@@ -39,10 +39,10 @@ export function EmergencyButton({ className }: EmergencyButtonProps) {
   return (
     <div className={cn("relative", className)}>
       <Button
-        variant="emergency"
-        size="touch-lg"
+        variant="destructive"
+        size="xl"
         className={cn(
-          "w-full rounded-2xl relative overflow-hidden",
+          "w-full rounded-2xl relative overflow-hidden min-h-[5rem] text-xl font-bold",
           isPressed && "scale-[0.98]"
         )}
         onMouseDown={handlePressStart}

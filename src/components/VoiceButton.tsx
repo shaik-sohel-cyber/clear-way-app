@@ -69,11 +69,11 @@ export function VoiceButton({ onSpeechResult, isProcessing = false, className }:
       )}
       
       <Button
-        variant={isListening ? "accent" : "hero"}
-        size="touch-lg"
+        variant="default"
+        size="xl"
         className={cn(
-          "relative z-10 rounded-full transition-all duration-300",
-          isListening && "glow-accent",
+          "relative z-10 rounded-full transition-all duration-300 min-h-[5rem] min-w-[5rem]",
+          isListening && "bg-accent text-accent-foreground",
           isProcessing && "opacity-70 cursor-wait"
         )}
         onClick={isListening ? stopListening : startListening}
