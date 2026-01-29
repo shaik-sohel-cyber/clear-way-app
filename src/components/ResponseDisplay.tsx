@@ -42,60 +42,22 @@ export function ResponseDisplay({ messages, isProcessing = false, className }: R
     <div 
       ref={scrollRef}
       className={cn(
-        "flex-1 p-4 overflow-y-auto space-y-4 scroll-smooth",
+        "flex-1 p-4 overflow-y-auto space-y-3",
         className
       )}
       role="log"
-      aria-label="Conversation history"
+      aria-label="Conversation"
       aria-live="polite"
     >
       <AnimatePresence mode="popLayout">
         {messages.length === 0 ? (
           <motion.div 
             key="empty"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="h-full flex flex-col items-center justify-center text-center space-y-6 py-12"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="h-full flex items-center justify-center"
           >
-            <motion.div 
-              className="relative p-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20"
-              animate={{ 
-                scale: [1, 1.05, 1],
-                rotate: [0, 5, -5, 0]
-              }}
-              transition={{ repeat: Infinity, duration: 4 }}
-            >
-              <Bot className="h-16 w-16 text-primary" />
-              <motion.div
-                className="absolute -top-1 -right-1 p-2 rounded-full bg-accent"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ repeat: Infinity, duration: 2 }}
-              >
-                <Sparkles className="h-4 w-4 text-accent-foreground" />
-              </motion.div>
-            </motion.div>
-            
-            <div className="space-y-3 max-w-sm">
-              <h2 className="text-2xl font-bold text-foreground">
-                Hello! I'm your Vision Assistant
-              </h2>
-              <p className="text-lg text-muted-foreground leading-relaxed">
-                Say <span className="text-primary font-semibold">"Hey Vision"</span> followed by a command, 
-                or tap the microphone to get started.
-              </p>
-            </div>
-
-            {/* Feature hints */}
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {['Describe', 'Navigate', 'Read', 'Detect'].map((action) => (
-                <span 
-                  key={action}
-                  className="px-3 py-1 rounded-full bg-muted text-sm text-muted-foreground"
-                >
-                  {action}
-                </span>
-              ))}
-            </div>
+            <p className="text-muted-foreground text-center">Say a command to start</p>
           </motion.div>
         ) : (
           <div className="space-y-4">

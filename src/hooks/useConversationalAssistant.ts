@@ -34,24 +34,9 @@ const MENU_OPTIONS = [
   { id: 'obstacle' as const, label: 'Check for obstacles', number: 6 },
 ];
 
-const GREETING_MESSAGE = `Hello! I'm VisionAI, your visual assistant. How can I help you today? 
-Say one of the following:
-1. Describe the scene
-2. Navigate
-3. Read text
-4. Detect objects
-5. Find my location
-6. Check for obstacles
-Or just say what you need, like "Hey Vision, describe".`;
+const GREETING_MESSAGE = `VisionAI ready. Say: Describe, Navigate, Read, Detect, Location, or Obstacle.`;
 
-const MENU_MESSAGE = `What would you like me to do?
-1. Describe the scene
-2. Get navigation help
-3. Read visible text
-4. Detect objects
-5. Identify location
-6. Check for obstacles
-Just say the number or the action.`;
+const MENU_MESSAGE = `Options: Describe, Navigate, Read, Detect, Location, Obstacle. What do you need?`;
 
 export function useConversationalAssistant(options: UseConversationalAssistantOptions) {
   const { onAction, onSpeak, onHelp } = options;
