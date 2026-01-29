@@ -1,13 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { StatusBar } from "@/components/StatusBar";
 import { VoiceListener } from "@/components/VoiceListener";
 import { ResponseDisplay } from "@/components/ResponseDisplay";
-import { QuickActions } from "@/components/QuickActions";
 import { EmergencyButton } from "@/components/EmergencyButton";
 import { HelpDialog } from "@/components/HelpDialog";
 import { ObstacleWarningOverlay } from "@/components/ui/ObstacleWarningOverlay";
-import { ConversationPrompt } from "@/components/ConversationPrompt";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { useVoiceCommands, VoiceCommand } from "@/hooks/useVoiceCommands";
 import { useVisionAI, VisionMode } from "@/hooks/useVisionAI";
@@ -15,9 +12,10 @@ import { useCamera } from "@/hooks/useCamera";
 import { useAutoObstacleDetection } from "@/hooks/useAutoObstacleDetection";
 import { useConversationalAssistant } from "@/hooks/useConversationalAssistant";
 import { useSettings } from "@/contexts/SettingsContext";
-import { Camera, CameraOff, WifiOff, Wifi } from "lucide-react";
+import { Eye, Navigation, FileText, Search, MapPin, Shield, Settings, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
+import { Link } from "react-router-dom";
 
 interface Message {
   id: string;
@@ -26,22 +24,18 @@ interface Message {
   timestamp: Date;
 }
 
-const HELP_MESSAGE = `Here are the voice commands you can use:
-Say "describe" to hear what's around you.
-Say "navigate" for directions.
-Say "read" to read any visible text.
-Say "detect" to identify nearby objects.
-Say "location" to identify where you are.
-Say "obstacle" to check for hazards ahead.
-Say "stop" to cancel.
-Or just ask me anything!`;
+const HELP_MESSAGE = `Voice Commands:
+• "Describe" - scene overview
+• "Navigate" - directions  
+• "Read" - text reading
+• "Detect" - find objects
+• "Location" - where am I
+• "Obstacle" - path check
+• "Stop" - cancel`;
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeMode, setActiveMode] = useState<VisionMode | undefined>();
-  const [showCamera, setShowCamera] = useState(true);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [showConversationPrompt, setShowConversationPrompt] = useState(true);
   const hasStartedRef = useRef(false);
 
   const { settings } = useSettings();
@@ -52,32 +46,8 @@ const Index = () => {
   // Auto obstacle detection
   const { lastWarning, warningLevel, isChecking } = useAutoObstacleDetection({
     captureImage,
-    isActive: cameraActive && showCamera,
+    isActive: cameraActive,
   });
-
-  // Online/offline detection
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      toast({ title: "Back Online", description: "Connection restored" });
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      toast({ 
-        variant: "destructive", 
-        title: "Offline", 
-        description: "Some features may be limited" 
-      });
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   // Add message to conversation
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
@@ -96,30 +66,27 @@ const Index = () => {
     const image = captureImage();
     
     if (!image) {
-      const errorMsg = "Could not capture image. Please enable the camera first.";
+      const errorMsg = "Camera not ready. Please wait.";
       speak(errorMsg);
       addMessage('assistant', errorMsg);
       return;
     }
 
     setActiveMode(mode);
-    setShowConversationPrompt(false);
 
-    const userMsg = query 
-      ? `${mode}${query ? ` - ${query}` : ''}`
-      : `${mode}`;
-    addMessage('user', userMsg);
+    addMessage('user', mode);
 
-    const acknowledgments: Record<VisionMode, string> = {
-      describe: "Let me describe what I see...",
-      navigate: query ? `Finding directions to ${query}...` : "Looking for navigation options...",
-      read: "Reading the text...",
-      detect: "Detecting objects around you...",
-      location: "Identifying your location...",
-      obstacle: "Checking the path ahead...",
-      general: "Let me analyze that...",
+    // Short acknowledgment
+    const ack: Record<VisionMode, string> = {
+      describe: "Looking...",
+      navigate: "Checking path...",
+      read: "Reading...",
+      detect: "Scanning...",
+      location: "Locating...",
+      obstacle: "Checking ahead...",
+      general: "Analyzing...",
     };
-    speak(acknowledgments[mode] || "Analyzing...");
+    speak(ack[mode] || "Analyzing...");
 
     // Haptic feedback
     if (settings.hapticFeedback && 'vibrate' in navigator) {
@@ -131,13 +98,8 @@ const Index = () => {
     if (result) {
       addMessage('assistant', result);
       await speak(result);
-      
-      // After response, offer to help more
-      setTimeout(() => {
-        speak("What else can I help you with?");
-      }, 1000);
     } else {
-      const errorMsg = "I couldn't analyze that. Please try again.";
+      const errorMsg = "Try again.";
       addMessage('assistant', errorMsg);
       speak(errorMsg);
     }
@@ -147,7 +109,6 @@ const Index = () => {
 
   // Show help
   const showHelp = useCallback(() => {
-    addMessage('user', 'help');
     addMessage('assistant', HELP_MESSAGE);
     speak(HELP_MESSAGE);
   }, [addMessage, speak]);
@@ -161,41 +122,27 @@ const Index = () => {
 
   // Handle voice commands
   const handleCommand = useCallback((result: { command: VoiceCommand; query?: string; rawText: string }) => {
-    console.log('Voice command received:', result);
-
-    // Let conversational assistant handle it first
     const handled = assistant.handleCommand(result);
     
     if (!handled && result.command === 'stop') {
       stopSpeaking();
-      addMessage('user', 'stop');
       addMessage('assistant', "Stopped.");
     }
   }, [assistant, stopSpeaking, addMessage]);
 
   // Voice command hook
-  const { isListening, startListening, stopListening, isSupported: voiceSupported, lastTranscript } = useVoiceCommands({
+  const { isListening, startListening, stopListening, isSupported: voiceSupported } = useVoiceCommands({
     onCommand: handleCommand,
-    onError: (error) => {
-      console.log('Voice error:', error);
-    },
-    onTranscript: (transcript) => {
-      console.log('Heard:', transcript);
-    },
+    onError: () => {},
+    onTranscript: () => {},
     continuous: true,
   });
 
   // Handle quick action buttons
   const handleQuickAction = useCallback((action: string) => {
-    if (action === 'emergency') return;
-
     if (!cameraActive) {
-      speak("Camera is not active. Please enable the camera first.");
-      toast({
-        variant: "destructive",
-        title: "Camera Required",
-        description: "Please enable the camera to use this feature.",
-      });
+      speak("Starting camera...");
+      startCamera();
       return;
     }
 
@@ -212,7 +159,7 @@ const Index = () => {
     if (mode) {
       performAnalysis(mode);
     }
-  }, [cameraActive, performAnalysis, speak]);
+  }, [cameraActive, performAnalysis, speak, startCamera]);
 
   // Toggle voice listening
   const toggleListening = useCallback(() => {
@@ -225,13 +172,9 @@ const Index = () => {
 
   // Start camera on mount
   useEffect(() => {
-    if (showCamera) {
-      startCamera();
-    }
-    return () => {
-      stopCamera();
-    };
-  }, [showCamera, startCamera, stopCamera]);
+    startCamera();
+    return () => stopCamera();
+  }, [startCamera, stopCamera]);
 
   // Initial greeting
   useEffect(() => {
@@ -240,145 +183,132 @@ const Index = () => {
       
       const timer = setTimeout(() => {
         startListening();
-        assistant.greet();
-      }, 1500);
+        speak("VisionAI ready. Say a command or tap a button.");
+      }, 1000);
       
       return () => clearTimeout(timer);
     }
-  }, [voiceSupported, startListening, assistant]);
+  }, [voiceSupported, startListening, speak]);
+
+  const quickActions = [
+    { id: 'describe', icon: Eye, label: 'Describe' },
+    { id: 'navigate', icon: Navigation, label: 'Navigate' },
+    { id: 'read', icon: FileText, label: 'Read' },
+    { id: 'detect', icon: Search, label: 'Detect' },
+    { id: 'location', icon: MapPin, label: 'Location' },
+    { id: 'obstacle', icon: Shield, label: 'Obstacle' },
+  ];
 
   return (
-    <div className="flex flex-col h-screen bg-background pb-20">
-      {/* Status Bar */}
-      <StatusBar isOnline={isOnline} />
-      
-      {/* Header */}
-      <motion.header 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/50 backdrop-blur-lg"
-      >
-        <div className="flex items-center gap-3">
+    <div className="flex flex-col h-screen bg-background">
+      {/* Camera - Full Screen Background */}
+      <div className="absolute inset-0 z-0">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-cover"
+          aria-label="Camera feed"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-transparent to-background" />
+      </div>
+
+      {/* Obstacle Warning */}
+      <ObstacleWarningOverlay 
+        warningLevel={warningLevel}
+        message={lastWarning || undefined}
+        isVisible={settings.autoObstacleWarning && warningLevel !== 'none'}
+      />
+
+      {/* Top Bar */}
+      <header className="relative z-10 flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2">
           <motion.div 
-            className="p-2 rounded-full bg-primary/20"
-            animate={{ scale: isListening ? [1, 1.1, 1] : 1 }}
-            transition={{ repeat: isListening ? Infinity : 0, duration: 1.5 }}
-          >
-            {isOnline ? (
-              <Wifi className="h-5 w-5 text-success" />
-            ) : (
-              <WifiOff className="h-5 w-5 text-warning" />
-            )}
-          </motion.div>
-          <h1 className="text-accessible-lg text-primary font-bold">VisionAI</h1>
+            className="w-3 h-3 rounded-full bg-success"
+            animate={{ opacity: cameraActive ? [1, 0.5, 1] : 0.3 }}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+          />
+          <span className="text-lg font-bold text-foreground">VisionAI</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            aria-label={showCamera ? "Hide camera" : "Show camera"}
-            onClick={() => setShowCamera(!showCamera)}
-            className="touch-target"
-          >
-            {showCamera ? <CameraOff className="h-6 w-6" /> : <Camera className="h-6 w-6" />}
-          </Button>
           <HelpDialog onSpeak={speak} />
+          <Link to="/settings">
+            <Button variant="ghost" size="icon" className="h-10 w-10" aria-label="Settings">
+              <Settings className="h-5 w-5" />
+            </Button>
+          </Link>
         </div>
-      </motion.header>
+      </header>
 
-      {/* Camera View */}
+      {/* Status Indicator */}
       <AnimatePresence>
-        {showCamera && (
+        {(isAnalyzing || isChecking || isSpeaking) && (
           <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="relative overflow-hidden"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="relative z-10 mx-4 mb-2"
           >
-            <div className="h-56 md:h-72 relative">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                aria-label="Camera feed for scene analysis"
-              />
-              
-              {/* Camera overlay gradient */}
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/80 pointer-events-none" />
-              
-              {/* Live indicator */}
-              {cameraActive && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="absolute top-3 left-3 flex items-center gap-2 bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-full"
-                >
-                  <motion.span 
-                    className="w-2.5 h-2.5 rounded-full bg-success"
-                    animate={{ opacity: [1, 0.5, 1] }}
-                    transition={{ repeat: Infinity, duration: 1.5 }}
-                  />
-                  <span className="text-sm font-medium">Live</span>
-                </motion.div>
-              )}
-
-              {/* Obstacle warning overlay */}
-              <ObstacleWarningOverlay 
-                warningLevel={warningLevel}
-                message={lastWarning || undefined}
-                isVisible={settings.autoObstacleWarning && warningLevel !== 'none'}
-              />
-
-              {/* Analyzing indicator */}
-              {(isAnalyzing || isChecking) && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="absolute top-3 right-3 bg-primary/90 backdrop-blur-sm px-3 py-1.5 rounded-full"
-                >
-                  <span className="text-sm font-medium text-primary-foreground">
-                    {isChecking ? 'Scanning...' : 'Analyzing...'}
-                  </span>
-                </motion.div>
-              )}
+            <div className="flex items-center justify-center gap-2 bg-card/80 backdrop-blur-sm rounded-full px-4 py-2">
+              {isSpeaking && <Volume2 className="h-4 w-4 text-primary animate-pulse" />}
+              <span className="text-sm font-medium">
+                {isAnalyzing ? 'Analyzing...' : isChecking ? 'Scanning...' : 'Speaking...'}
+              </span>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Conversation Prompt */}
-      <AnimatePresence>
-        {showConversationPrompt && messages.length === 0 && (
-          <ConversationPrompt 
-            isListening={isListening}
-            lastTranscript={lastTranscript}
-            onActionSelect={handleQuickAction}
-          />
+      {/* Messages Area */}
+      <div className="flex-1 relative z-10 overflow-hidden">
+        {messages.length > 0 ? (
+          <ResponseDisplay messages={messages} isProcessing={isAnalyzing} />
+        ) : (
+          <div className="h-full flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center space-y-2"
+            >
+              <p className="text-xl font-medium text-foreground">Ready to help</p>
+              <p className="text-muted-foreground">Say "Hey Vision" or tap below</p>
+            </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
 
-      {/* Response Display */}
-      <ResponseDisplay 
-        messages={messages} 
-        isProcessing={isAnalyzing} 
-      />
+      {/* Quick Actions Grid */}
+      <div className="relative z-10 px-4 pb-4">
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            const isActive = activeMode === action.id;
+            return (
+              <motion.button
+                key={action.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => handleQuickAction(action.id)}
+                disabled={isAnalyzing}
+                className={`
+                  flex flex-col items-center justify-center gap-1 p-3 rounded-xl
+                  transition-all touch-target
+                  ${isActive 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-card/80 backdrop-blur-sm text-foreground hover:bg-card'
+                  }
+                  disabled:opacity-50
+                `}
+                aria-label={action.label}
+              >
+                <Icon className="h-6 w-6" />
+                <span className="text-xs font-medium">{action.label}</span>
+              </motion.button>
+            );
+          })}
+        </div>
 
-      {/* Quick Actions */}
-      <QuickActions 
-        onAction={handleQuickAction}
-        activeMode={activeMode}
-      />
-
-      {/* Main Controls */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="p-4 bg-card/50 backdrop-blur-lg border-t border-border space-y-4"
-      >
-        {/* Voice Listener */}
+        {/* Voice Control */}
         <VoiceListener
           isListening={isListening}
           isProcessing={isAnalyzing}
@@ -386,9 +316,11 @@ const Index = () => {
           onToggle={toggleListening}
         />
 
-        {/* Emergency Button */}
-        <EmergencyButton />
-      </motion.div>
+        {/* Emergency */}
+        <div className="mt-3">
+          <EmergencyButton />
+        </div>
+      </div>
     </div>
   );
 };
