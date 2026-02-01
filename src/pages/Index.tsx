@@ -12,7 +12,7 @@ import { useCamera } from "@/hooks/useCamera";
 import { useAutoObstacleDetection } from "@/hooks/useAutoObstacleDetection";
 import { useConversationalAssistant } from "@/hooks/useConversationalAssistant";
 import { useSettings } from "@/contexts/SettingsContext";
-import { Eye, Navigation, FileText, Search, MapPin, Shield, Settings, Volume2, Camera } from "lucide-react";
+import { Eye, Navigation, FileText, Search, MapPin, Shield, Settings, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
@@ -138,14 +138,9 @@ const Index = () => {
     continuous: true,
   });
 
-  // Store pending action when camera needs to start first
-  const pendingActionRef = useRef<string | null>(null);
-
   // Handle quick action buttons
   const handleQuickAction = useCallback((action: string) => {
     if (!cameraActive) {
-      // Store the action and start camera - action will execute when camera is ready
-      pendingActionRef.current = action;
       speak("Starting camera...");
       startCamera();
       return;
@@ -166,30 +161,6 @@ const Index = () => {
     }
   }, [cameraActive, performAnalysis, speak, startCamera]);
 
-  // Execute pending action when camera becomes active
-  useEffect(() => {
-    if (cameraActive && pendingActionRef.current) {
-      const action = pendingActionRef.current;
-      pendingActionRef.current = null;
-      
-      // Small delay to ensure camera is fully ready
-      setTimeout(() => {
-        const modeMap: Record<string, VisionMode> = {
-          describe: 'describe',
-          navigate: 'navigate',
-          read: 'read',
-          detect: 'detect',
-          location: 'location',
-          obstacle: 'obstacle',
-        };
-        const mode = modeMap[action];
-        if (mode) {
-          performAnalysis(mode);
-        }
-      }, 500);
-    }
-  }, [cameraActive, performAnalysis]);
-
   // Toggle voice listening
   const toggleListening = useCallback(() => {
     if (isListening) {
@@ -199,19 +170,25 @@ const Index = () => {
     }
   }, [isListening, startListening, stopListening]);
 
-  // Cleanup camera on unmount only
+  // Start camera on mount
   useEffect(() => {
+    startCamera();
     return () => stopCamera();
-  }, [stopCamera]);
+  }, [startCamera, stopCamera]);
 
-  // Initial greeting after camera starts
+  // Initial greeting
   useEffect(() => {
-    if (cameraActive && voiceSupported && !hasStartedRef.current) {
+    if (voiceSupported && !hasStartedRef.current) {
       hasStartedRef.current = true;
-      startListening();
-      speak("VisionAI ready. Say a command or tap a button.");
+      
+      const timer = setTimeout(() => {
+        startListening();
+        speak("VisionAI ready. Say a command or tap a button.");
+      }, 1000);
+      
+      return () => clearTimeout(timer);
     }
-  }, [cameraActive, voiceSupported, startListening, speak]);
+  }, [voiceSupported, startListening, speak]);
 
   const quickActions = [
     { id: 'describe', icon: Eye, label: 'Describe' },
@@ -221,39 +198,6 @@ const Index = () => {
     { id: 'location', icon: MapPin, label: 'Location' },
     { id: 'obstacle', icon: Shield, label: 'Obstacle' },
   ];
-
-  // Handle start button - MUST be direct user gesture for mobile
-  const handleStartApp = useCallback(async () => {
-    await startCamera();
-  }, [startCamera]);
-
-  // Show start screen if camera not active
-  if (!cameraActive) {
-    return (
-      <div className="flex flex-col h-screen bg-background items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center space-y-6"
-        >
-          <div className="w-24 h-24 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-            <Camera className="w-12 h-12 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold">VisionAI Assistant</h1>
-          <p className="text-muted-foreground">Tap below to start camera and voice assistant</p>
-          <Button
-            size="lg"
-            className="min-h-[4rem] min-w-[12rem] text-lg rounded-full"
-            onClick={handleStartApp}
-          >
-            <Camera className="mr-2 h-6 w-6" />
-            Start Camera
-          </Button>
-          <p className="text-sm text-muted-foreground">Camera access required for vision features</p>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col h-screen bg-background">
