@@ -138,9 +138,14 @@ const Index = () => {
     continuous: true,
   });
 
+  // Store pending action when camera needs to start first
+  const pendingActionRef = useRef<string | null>(null);
+
   // Handle quick action buttons
   const handleQuickAction = useCallback((action: string) => {
     if (!cameraActive) {
+      // Store the action and start camera - action will execute when camera is ready
+      pendingActionRef.current = action;
       speak("Starting camera...");
       startCamera();
       return;
@@ -160,6 +165,30 @@ const Index = () => {
       performAnalysis(mode);
     }
   }, [cameraActive, performAnalysis, speak, startCamera]);
+
+  // Execute pending action when camera becomes active
+  useEffect(() => {
+    if (cameraActive && pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      
+      // Small delay to ensure camera is fully ready
+      setTimeout(() => {
+        const modeMap: Record<string, VisionMode> = {
+          describe: 'describe',
+          navigate: 'navigate',
+          read: 'read',
+          detect: 'detect',
+          location: 'location',
+          obstacle: 'obstacle',
+        };
+        const mode = modeMap[action];
+        if (mode) {
+          performAnalysis(mode);
+        }
+      }, 500);
+    }
+  }, [cameraActive, performAnalysis]);
 
   // Toggle voice listening
   const toggleListening = useCallback(() => {
