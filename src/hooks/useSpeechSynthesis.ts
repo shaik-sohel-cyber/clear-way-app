@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
+import { useSettings } from '@/contexts/SettingsContext';
 
 interface SpeechCallbacks {
   onStart?: () => void;
@@ -8,6 +9,7 @@ interface SpeechCallbacks {
 export function useSpeechSynthesis() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const { settings } = useSettings();
   const callbacksRef = useRef<SpeechCallbacks>({});
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
@@ -23,7 +25,7 @@ export function useSpeechSynthesis() {
     }
   }, []);
 
-  const speak = useCallback((text: string, rate: number = 0.9, callbacks?: SpeechCallbacks): Promise<void> => {
+  const speak = useCallback((text: string, callbacks?: SpeechCallbacks): Promise<void> => {
     return new Promise((resolve) => {
       if (!isSupported) {
         resolve();
@@ -35,9 +37,11 @@ export function useSpeechSynthesis() {
       callbacksRef.current = callbacks || {};
 
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = rate;
-      utterance.pitch = 1;
-      utterance.volume = 1;
+      
+      // Apply user settings
+      utterance.rate = settings.voiceSpeed;
+      utterance.pitch = settings.voicePitch;
+      utterance.volume = settings.voiceVolume;
 
       // Try to use a clear, natural voice
       const voices = window.speechSynthesis.getVoices();
@@ -72,7 +76,7 @@ export function useSpeechSynthesis() {
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     });
-  }, [isSupported]);
+  }, [isSupported, settings.voiceSpeed, settings.voicePitch, settings.voiceVolume]);
 
   const stop = useCallback(() => {
     if (isSupported) {
