@@ -60,15 +60,31 @@ export function useAutoObstacleDetection({ captureImage, isActive }: UseAutoObst
   }, [captureImage, analyzeImage, isAnalyzing, speak, settings.hapticFeedback]);
 
   useEffect(() => {
-    if (settings.autoObstacleWarning && isActive) {
-      // Initial check
-      checkForObstacles();
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
-      // Set up interval
-      intervalRef.current = setInterval(
-        checkForObstacles,
-        settings.obstacleWarningInterval * 1000
-      );
+    if (settings.autoObstacleWarning && isActive) {
+      // Delay first check to avoid immediate API call on mount
+      const initialDelay = setTimeout(() => {
+        checkForObstacles();
+        
+        // Set up recurring interval
+        intervalRef.current = setInterval(
+          checkForObstacles,
+          settings.obstacleWarningInterval * 1000
+        );
+      }, settings.obstacleWarningInterval * 1000);
+
+      return () => {
+        clearTimeout(initialDelay);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      };
     }
 
     return () => {
