@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useVisionAI } from '@/hooks/useVisionAI';
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
+import { notificationService } from '@/services/notificationService';
 
 interface UseAutoObstacleDetectionProps {
   captureImage: () => string | null;
@@ -15,6 +16,16 @@ export function useAutoObstacleDetection({ captureImage, isActive }: UseAutoObst
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [lastWarning, setLastWarning] = useState<string | null>(null);
   const [warningLevel, setWarningLevel] = useState<'none' | 'low' | 'medium' | 'high'>('none');
+  const notificationInitialized = useRef(false);
+
+  // Initialize notifications on first use
+  useEffect(() => {
+    if (settings.autoObstacleWarning && !notificationInitialized.current) {
+      notificationService.initialize().then((success) => {
+        notificationInitialized.current = success;
+      });
+    }
+  }, [settings.autoObstacleWarning]);
 
   const checkForObstacles = useCallback(async () => {
     if (isAnalyzing) return;
@@ -40,9 +51,13 @@ export function useAutoObstacleDetection({ captureImage, isActive }: UseAutoObst
         setWarningLevel(level);
         setLastWarning(result);
 
-        // Only speak if there's a warning
+        // Send local notification for warnings (works in background)
+        if (level === 'high' || level === 'medium') {
+          notificationService.sendObstacleAlert(result, level);
+        }
+
+        // Speak and vibrate for in-app warnings
         if (level === 'high') {
-          // Vibrate for high alerts
           if (settings.hapticFeedback && 'vibrate' in navigator) {
             navigator.vibrate([500, 100, 500]);
           }
